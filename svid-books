@@ -234,7 +234,6 @@ for item in $(cat ~/.svid_all);do
 		spath="${name:0:-3}"
 		get_cyr_path
 		name="${path}awb"
-echo `pwd` ${n} ${name}
 		nice -n 19 ffmpeg -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
 		rm "${n}"
 	done
