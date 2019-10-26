@@ -4,6 +4,160 @@
 afolder="/media/winda/Audiobooks"
 
 temp="/tmp/$$.tmp"
+path=
+spath=
+
+# уровень громкости, что-бы обойти ограничения кодека amr в слышимости хрипов на максималках
+vl=0.9
+
+# функция бектранслита без учёта регистра
+function get_cyr_path {
+	s="${spath}"; frasa=""
+
+	for((i=0;$i<${#s};i++)); do
+		variable=${s:$i:1}
+
+		case $variable in
+			a)
+				res="а"
+				;;
+			b)
+				res="б"
+				;;
+			c)
+				if [ "${s:$(( i+1 )):1}" = "h" ]; then
+					(( i++ ))
+					res="ч"
+				else
+					res="ц"
+				fi
+				;;
+			d)
+				res="д"
+				;;
+			e)
+				res="е"
+				;;
+			f)
+				res="ф"
+				;;
+			g)
+				res="г"
+				;;
+			h)
+				res="х"
+				;;
+			i)
+				a="${s:$(( i+1 )):1}"
+				if [ "${a}" = "a" ]; then
+					(( i++ ))
+					res="я"
+				else
+					res="и"
+				fi
+				;;
+			j)
+				a="${s:$(( i+1 )):1}"
+				if [ "${a}" = "a" ]; then
+					(( i++ ))
+					res="я"
+				else
+					res="й"
+				fi
+				;;
+			k)
+				res="к"
+				;;
+			l)
+				res="л"
+				;;
+			m)
+				res="м"
+				;;
+			n)
+				res="н"
+				;;
+			o)
+				res="о"
+				;;
+			p)
+				res="п"
+				;;
+			q)
+				res="ку"
+				;;
+			r)
+				res="р"
+				;;
+			s)
+				a="${s:$(( i+1 )):1}"
+				b="${s:$(( i+2 )):1}"
+				if [ "${a}" = "h" ]; then
+					(( i++ ))
+					res="ш"
+				elif [[ "${a}" = "c" && "${b}" = "h" ]]; then
+					(( i+=2 ))
+					res="щ"
+				else
+					res="с"
+				fi
+				;;
+			t)
+				res="т"
+				;;
+			u)
+				res="у"
+				;;
+			v)
+				res="в"
+				;;
+			w)
+				res="в"
+				;;
+			x)
+				res="кс"
+				;;
+			y)
+				if [ "${s:$(( i+1 )):1}" = "u" ]; then
+					(( i++ ))
+					res="ю"
+				elif [ "${s:$(( i+1 )):1}" = "a" ]; then
+					(( i++ ))
+					res="я"
+				else
+					u=$((${#frasa}-1))
+					a=${frasa:$u:1}
+					# после согласных символ "y" обычно имеет нотацию "ы", а после гласных "й"
+					case ${a} in
+						"б"|"в"|"г"|"д"|"ж"|"з"|"к"|"л"|"м"|"н"|"п"|"р"|"с"|"т"|"ф"|"х"|"ц"|"ч"|"ш"|"щ")
+							res="ы"
+							;;
+						*)
+							res="й"
+							;;
+					esac
+				fi
+				;;
+			z)
+				if [ "${s:$(( i+1 )):1}" = "h" ]; then
+					(( i++ ))
+					res="ж"
+				else
+					res="з"
+				fi
+				;;
+			-)
+				res="_"
+				;;
+			*)
+				res=${variable}
+				;;
+		esac
+		frasa="${frasa}${res}"
+	done
+
+	path="${frasa}"
+}
 
 # Постраничная загрузка ссылок на все аудиокниги сайта
 list=/tmp/$$.list
@@ -33,7 +187,9 @@ for item in $(cat ~/.svid_all);do
 	folder="${folder:0:-5}"
 	folder="$(echo ${folder}|sed -r 's/^[0-9]*-//')"
 	subfolder="$(echo ${item}|sed 's/https.*\.ru\/books\///'|sed 's/\/.*//')"
-	folder="${subfolder}/${folder}"
+	spath="${subfolder}/${folder}"
+	get_cyr_path
+	folder="${path}"
 	if [ ! -d "${folder}" ];then
 		mkdir -p "${folder}"
 		cd "${folder}"
@@ -73,13 +229,14 @@ for item in $(cat ~/.svid_all);do
 	fi
 
 # Перекодирование
-	for i in *.mp3; do
-		name=$(echo ${i}|sed -r 's/^[0-9]*_//')
-		name="${name:0:-3}awb"
-#		if [ ! -f "${name}" ]; then
-		nice -n 19 ffmpeg -i "${i}" -ac 1 -ab 18250 -ar 16000 -f amr -acodec libvo_amrwbenc "${name}"
-		rm "${i}"
-#		fi
+	for n in *.mp3; do
+		name=$(echo ${n}|sed -r 's/^[0-9]*_//')
+		spath="${name:0:-3}"
+		get_cyr_path
+		name="${path}awb"
+echo `pwd` ${n} ${name}
+		nice -n 19 ffmpeg -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
+		rm "${n}"
 	done
 	echo "${item}" >> ~/.svid_overhead
 done
