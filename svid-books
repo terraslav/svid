@@ -1,14 +1,15 @@
 #!/bin/bash
 
-# определитель пути к папке с аудиокнигами
+# определитель пути к папке с аудиокнигами - тут каждому своё
 afolder="/media/winda/Audiobooks"
-
-temp="/tmp/$$.tmp"
-path=
-spath=
 
 # уровень громкости, что-бы обойти ограничения кодека amr в слышимости хрипов на максималках
 vl=0.9
+
+# пути и глобальные переменные
+temp="/tmp/$$.tmp"
+path=
+spath=
 
 # функция бектранслита без учёта регистра. Длинная, нудная, но очень глаза берегущая(транслит читать - садомазо)!
 function get_cyr_path {
@@ -155,7 +156,6 @@ function get_cyr_path {
 		esac
 		frasa="${frasa}${res}"
 	done
-
 	path="${frasa}"
 }
 
@@ -196,13 +196,9 @@ for item in $(cat ~/.svid_all);do
 		echo "${folder}" > ~/.svid_last
 		notify-send "${folder}"
 	else
-		# если было прерывание работы на этапе обработки книги не стоит игнорировать её повторную обработку
-#		tmp="$(grep "${folder}" ~/.svid_last)"
-#		if [ "${tmp}_" = "_" ];then
-			notify-send "${folder} - уже был!"
-			echo "${item}" >> ~/.svid_overhead
-			continue
-#		fi
+		notify-send "${folder} - уже был!"
+		echo "${item}" >> ~/.svid_overhead
+		continue
 	fi
 
 # Загрузка страницы
