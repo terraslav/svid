@@ -230,10 +230,6 @@ for item in $(cat ~/.svid_all);do
 		done
 	fi
 	
-	if [ ! "${1}_" = "_" ];then
-		echo "${item}" >> ~/.svid_overhead
-		continue
-	fi
 # Перекодирование
 	count=1
 	for n in *.mp3; do
@@ -247,10 +243,10 @@ for item in $(cat ~/.svid_all);do
 		fi
 		if [ "${1}_" = "_" ];then
 			nice -n 19 ffmpeg -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
+			rm "${n}"
 		else
 			mv "${n}" "${name:0:-3}mp3"
 		fi
-		rm "${n}"
 	(( count++ ))
 	done
 	echo "${item}" >> ~/.svid_overhead
