@@ -1,15 +1,18 @@
 #!/bin/bash
+# скрипт загрузки и подготовки файлов-svid="https://www.svidbook.ru/books/"
 
+# пути и глобальные переменные
 # определитель пути к папке с аудиокнигами - тут каждому своё
+svid="https://www.svidbook.ru/books/page/"
 afolder="/media/winda/Audiobooks"
+temp="/tmp/$$.tmp"
+
+# переменные для функции бэктранслита
+path=
+spath=
 
 # уровень громкости, что-бы обойти ограничения кодека amr в слышимости хрипов на максималках
 vl=0.9
-
-# пути и глобальные переменные
-temp="/tmp/$$.tmp"
-path=
-spath=
 
 # функция бектранслита без учёта регистра. Длинная, нудная, но очень глаза берегущая(транслит читать - садомазо)!
 function get_cyr_path {
@@ -164,9 +167,10 @@ list=/tmp/$$.list
 if [ ! -f ~/.svid_all ];then
 for page in $(seq 1 1000); do
 	if [ -f index.html ];then rm index.html; fi
-	wget "https://www.svidbook.ru/books/page/${page}/"
+	wget "${svid}${page}/"
 	if [ ! -f index.html ]; then break; fi
-	cat index.html|grep href=\"https:\/\/www.svidbook.ru\/books\/|grep "<div class=\"func\">"|sed -r 's/^.*href="//'|sed -r 's/" title=.*//' > ${list}
+#	cat index.html|grep href=\"https:\/\/www.svidbook.ru\/books\/|grep "<div class=\"func\">"|sed -r 's/^.*href="//'|sed -r 's/" title=.*//' > ${list}
+	cat index.html|grep $(svid)|grep "<div class=\"func\">"|sed -r 's/^.*href="//'|sed -r 's/" title=.*//' > ${list}
 	rm index.html
 	for item in $(cat ${list}); do
 		echo $item >> ~/.svid_all
@@ -174,6 +178,8 @@ for page in $(seq 1 1000); do
 done
 fi
 rm ${list}
+
+exit 0
 
 if [ ! -f ~/.svid_overhead ]; then touch ~/.svid_overhead; fi
 if [ ! -f ~/.svid_last ]; then touch ~/.svid_last; fi
@@ -223,15 +229,29 @@ for item in $(cat ~/.svid_all);do
 			wget "${i}"
 		done
 	fi
-
+	
+	if [ ! "${1}_" = "_" ];then
+		echo "${item}" >> ~/.svid_overhead
+		continue
+	fi
 # Перекодирование
+	count=1
 	for n in *.mp3; do
 		name=$(echo ${n}|sed -r 's/^[0-9]*_//')
 		spath="${name:0:-3}"
 		get_cyr_path
 		name="${path}awb"
-		nice -n 19 ffmpeg -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
+		# переименование файла, если он существует
+		if [ -f "${name}" ];then
+			name="${path:0:-1}${count}.awb"
+		fi
+		if [ "${1}_" = "_" ];then
+			nice -n 19 ffmpeg -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
+		else
+			mv "${n}" "${name:0:-3}mp3"
+		fi
 		rm "${n}"
+	(( count++ ))
 	done
 	echo "${item}" >> ~/.svid_overhead
 done
