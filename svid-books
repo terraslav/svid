@@ -1,9 +1,9 @@
 #!/bin/bash
-# скрипт загрузки и подготовки файлов-svid="https://www.svidbook.ru/books/"
+# скрипт загрузки и подготовки файлов портала https://www.svidbook.ru/
 
 # пути и глобальные переменные
 # определитель пути к папке с аудиокнигами - тут каждому своё
-svid="https://www.svidbook.ru/books/page/"
+svid="https://www.svidbook.ru/books/"
 afolder="/media/winda/Audiobooks"
 temp="/tmp/$$.tmp"
 
@@ -15,7 +15,7 @@ spath=
 vl=0.9
 
 # функция бектранслита без учёта регистра. Длинная, нудная, но очень глаза берегущая(транслит читать - садомазо)!
-function get_cyr_path {
+function get_cyr_path() {
 	s="${spath}"; frasa=""
 
 	for((i=0;$i<${#s};i++)); do
@@ -163,23 +163,20 @@ function get_cyr_path {
 }
 
 # Постраничная загрузка ссылок на все аудиокниги сайта
-list=/tmp/$$.list
 if [ ! -f ~/.svid_all ];then
-for page in $(seq 1 1000); do
-	if [ -f index.html ];then rm index.html; fi
-	wget "${svid}${page}/"
-	if [ ! -f index.html ]; then break; fi
-#	cat index.html|grep href=\"https:\/\/www.svidbook.ru\/books\/|grep "<div class=\"func\">"|sed -r 's/^.*href="//'|sed -r 's/" title=.*//' > ${list}
-	cat index.html|grep $(svid)|grep "<div class=\"func\">"|sed -r 's/^.*href="//'|sed -r 's/" title=.*//' > ${list}
-	rm index.html
-	for item in $(cat ${list}); do
-		echo $item >> ~/.svid_all
+	list=/tmp/$$.list
+	for page in $(seq 1 1000); do
+		if [ -f index.html ];then rm index.html; fi
+		wget "${svid}page/${page}/"
+		if [ ! -f index.html ]; then break; fi
+		cat index.html|grep ${svid}|grep "<div class=\"func\">"|sed -r 's/^.*href="//'|sed -r 's/" title=.*//' > ${list}
+		rm index.html
+		for item in $(cat ${list}); do
+			echo $item >> ~/.svid_all
+		done
 	done
-done
+	rm ${list}
 fi
-rm ${list}
-
-exit 0
 
 if [ ! -f ~/.svid_overhead ]; then touch ~/.svid_overhead; fi
 if [ ! -f ~/.svid_last ]; then touch ~/.svid_last; fi
@@ -189,23 +186,6 @@ for item in $(cat ~/.svid_all);do
 	tmp=$(grep "${item}" ~/.svid_overhead)
 	if [ ! "${tmp}_" = "_" ]; then continue; fi
 	cd "${afolder}"
-	folder=$(basename ${item})
-	folder="${folder:0:-5}"
-	folder="$(echo ${folder}|sed -r 's/^[0-9]*-//')"
-	subfolder="$(echo ${item}|sed 's/https.*\.ru\/books\///'|sed 's/\/.*//')"
-	spath="${subfolder}/${folder}"
-	get_cyr_path
-	folder="${path}"
-	if [ ! -d "${folder}" ];then
-		mkdir -p "${folder}"
-		cd "${folder}"
-		echo "${folder}" > ~/.svid_last
-		notify-send "${folder}"
-	else
-		notify-send "${folder} - уже был!"
-		echo "${item}" >> ~/.svid_overhead
-		continue
-	fi
 
 # Загрузка страницы
 	wget ${item} -O lst
@@ -213,19 +193,49 @@ for item in $(cat ~/.svid_all);do
 # проверка подключения к тырьнету и выход если ничего не скачано
 	fsize=$(wc -c lst|cut -f1 -d' ')
 	if [ ${fsize} -eq 0 ]; then
-		rmdir "${folder}"
 		break
 	fi
 
 # Распарсивание html-ки
 	cat lst|grep .mp3|sed 's/^<meta property=.*$//'|sed 's/data-mp3=\"/\n/g'|sed 's/\" data-title=\".*//g'|sed 's/.*li class.*$//'|sed '/^$/d' > ${temp}
+	annot="$(grep "uk-margin-small-bottom\">Аннотация" lst -A 2|sed '1d; 3d;s/^[ \t]*//')"
+	autor="$(grep "<h1>" lst | sed 's/-*<h1>//; s/<\/h1>.*//; s/\t//; s/ /_/g')"
 	rm lst
 
-# Проверка была-ла начата перекодировка для прерванной обрабоки
+	folder=$(basename ${item})
+	folder="${folder:0:-5}"
+	folder="$(echo ${folder}|sed -r 's/^[0-9]*-//')"
+	spath="$(echo ${item}|sed 's/https.*\.ru\/books\///'|sed 's/\/.*//')"
+	if [ "${autor}_" = "_" ]; then
+		spath="${spath}/${folder}"
+		get_cyr_path
+		folder="${path}"
+	else
+		get_cyr_path
+		folder="${path}/${autor}"
+	fi
+
+	if [ ! -d "${folder}" ];then
+		mkdir -p "${folder}"
+		cd "${folder}"
+		echo "${folder}" > ~/.svid_last
+		notify-send "${folder}"
+	else
+		notify-send "${folder} - уже был!"
+	fi
+
+	if [ ! "${annot}_" = "_" ];then
+		echo "${annot}" > Аннотация
+	else
+		rm Аннотация
+	fi
+
+# Проверка была-ла начата перекодировка для прерванной обработки
 	tmp=$(ls|grep .awb)
 	if [ "${tmp}_" = "_" ];then
 		# Загрузка mp3-шек
 		for i in $(cat ${temp}); do
+			if [ -f "${i}" ];then rm "${i}"; fi
 			wget "${i}"
 		done
 	fi
@@ -242,7 +252,7 @@ for item in $(cat ~/.svid_all);do
 			name="${path:0:-1}${count}.awb"
 		fi
 		if [ "${1}_" = "_" ];then
-			nice -n 19 ffmpeg -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
+			nice -n 19 ffmpeg -threads 2 -i "${n}" -ac 1 -ab 18250 -ar 16000 -af volume=$vl -f amr -acodec libvo_amrwbenc "${name}"
 			rm "${n}"
 		else
 			mv "${n}" "${name:0:-3}mp3"
