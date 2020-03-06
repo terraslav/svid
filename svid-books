@@ -2,10 +2,12 @@
 # скрипт загрузки и подготовки файлов портала https://www.svidbook.ru/
 
 # пути и глобальные переменные
-# определитель пути к папке с аудиокнигами - тут каждому своё
 svid="https://www.svidbook.ru/books/"
-afolder="/media/winda/Audiobooks"
 temp="/tmp/$$.tmp"
+clist="/tmp/current$$.list"
+
+# определитель пути к папке с аудиокнигами - тут каждому своё
+afolder="/home/terra/Audiobooks/svid-book"
 
 # переменные для функции бэктранслита
 path=
@@ -162,8 +164,31 @@ function get_cyr_path() {
 	path="${frasa}"
 }
 
-# Постраничная загрузка ссылок на все аудиокниги сайта
-if [ ! -f ~/.svid_all ];then
+# Получаю дату изменения файла ~/.svid_all и текущую
+fdate="$(stat ~/.svid_all|grep "Изменён:"|sed 's/^[^0-9]*//;s/\..*//')"
+fdate=$(date --date="$fdate" +"%s")
+cdate="$(date +"%s")"
+# Вычисляю разницу в минутах
+diff=$[ ($cdate - $fdate) / 60 ]
+
+# устанавливаю http://ppa.launchpad.net/alessandro-strada/ppa/ubuntu/pool/main/g/google-drive-ocamlfuse
+if [ ! -f /usr/bin/google-drive-ocamlfuse ]; then
+	res=i386; if [ $(uname -m) = x86_64 ]; then res=amd64; fi
+	wget -O /tmp/g.deb "http://ppa.launchpad.net/alessandro-strada/ppa/ubuntu/pool/main/g/google-drive-ocamlfuse/google-drive-ocamlfuse_0.7.17-0ubuntu2~ubuntu19.04.1_${res}.deb"
+	echo 4868|sudo -S dpkg -i /tmp/g.deb
+	rm /tmp/g.deb
+fi
+
+if [ ! -f "${HOME}/terraslav2345/svid-books/.svid_overhead" ];then
+	echo "Монтирую Google Drive..."
+	if [ ! -d "${HOME}/terraslav2345" ];then mkdir "${HOME}/terraslav2345"; fi
+	google-drive-ocamlfuse -label terraslav2345 "${HOME}/terraslav2345"
+fi
+
+# Если прошло больше 12 часов с последнего обновления списка то вновь перечитываю список аудиокниг
+if [ $diff -gt 720 ]; then
+	# Постраничная загрузка ссылок на все аудиокниги сайта
+	if [ -f ~/.svid_all ];then echo > ~/.svid_all; fi
 	list=/tmp/$$.list
 	for page in $(seq 1 1000); do
 		if [ -f index.html ];then rm index.html; fi
@@ -178,19 +203,37 @@ if [ ! -f ~/.svid_all ];then
 	rm ${list}
 fi
 
+if [ -f "${HOME}/terraslav2345/svid-books/.svid_overhead" ];then
+	if [ -f ~/.svid_overhead ];then mv .svid_overhead .svid_overhead.`date +%F`; fi
+	cp -v "${HOME}/terraslav2345/svid-books/.svid_overhead" ${HOME}/
+fi
 if [ ! -f ~/.svid_overhead ]; then touch ~/.svid_overhead; fi
 if [ ! -f ~/.svid_last ]; then touch ~/.svid_last; fi
 
 # Цикл загрузки аудиокниг
 for item in $(cat ~/.svid_all);do
+
+# Отсеивание уже загруженных книг
 	tmp=$(grep "${item}" ~/.svid_overhead)
 	if [ ! "${tmp}_" = "_" ]; then continue; fi
 	cd "${afolder}"
+	
+# Проверка подключения к тырнету
+	ping -c 5 -W 2 8.8.8.8 > /dev/null 2>&1
+	if [ ! $? = 0 ]; then
+		mes="Error! No internet connection"
+		echo "$mes"; notify-send "$mes"
+		break
+	fi
 
+# Убиваю wget если было зависание загрузки
+#	if [ "$(ps -e|grep wget)_" != "_" ];then killall wget; fi
+	
 # Загрузка страницы
-	wget ${item} -O lst
+	echo "Загружаю: ${item}"
+	wget --quiet ${item} -O lst
 
-# проверка подключения к тырьнету и выход если ничего не скачано
+# проверка загруженной страницы и выход если ничего не скачано
 	fsize=$(wc -c lst|cut -f1 -d' ')
 	if [ ${fsize} -eq 0 ]; then
 		break
@@ -201,7 +244,6 @@ for item in $(cat ~/.svid_all);do
 	annot="$(grep "uk-margin-small-bottom\">Аннотация" lst -A 2|sed '1d; 3d;s/^[ \t]*//')"
 	autor="$(grep "<h1>" lst | sed 's/-*<h1>//; s/<\/h1>.*//; s/\t//; s/ /_/g')"
 	rm lst
-
 	folder=$(basename ${item})
 	folder="${folder:0:-5}"
 	folder="$(echo ${folder}|sed -r 's/^[0-9]*-//')"
@@ -214,15 +256,15 @@ for item in $(cat ~/.svid_all);do
 		get_cyr_path
 		folder="${path}/${autor}"
 	fi
-
 	if [ ! -d "${folder}" ];then
+		echo "Создаю папку: ${folder}"
 		mkdir -p "${folder}"
-		cd "${folder}"
 		echo "${folder}" > ~/.svid_last
 		notify-send "${folder}"
 	else
 		notify-send "${folder} - уже был!"
 	fi
+	cd "${folder}"
 
 	if [ ! "${annot}_" = "_" ];then
 		echo "${annot}" > Аннотация
@@ -233,16 +275,15 @@ for item in $(cat ~/.svid_all);do
 # Проверка была-ла начата перекодировка для прерванной обработки
 	tmp=$(ls|grep .awb)
 	if [ "${tmp}_" = "_" ];then
-		# Загрузка mp3-шек
-		for i in $(cat ${temp}); do
-			if [ -f "${i}" ];then rm "${i}"; fi
-			wget "${i}"
-		done
+		echo "Загрузка mp3-шек"
+		cat "${temp}"
+		wget --no-verbose --no-check-certificate --content-disposition --restrict-file-names=nocontrol -ci "${temp}"
 	fi
 	
 # Перекодирование
 	count=1
 	for n in *.mp3; do
+		if [ "${n}" = "*.mp3" ]; then break; fi
 		name=$(echo ${n}|sed -r 's/^[0-9]*_//')
 		spath="${name:0:-3}"
 		get_cyr_path
@@ -257,9 +298,45 @@ for item in $(cat ~/.svid_all);do
 		else
 			mv "${n}" "${name:0:-3}mp3"
 		fi
-	(( count++ ))
+		(( count++ ))
 	done
+	if [ ! -f ${clist} ]; then
+		touch ${clist}
+		echo "Update: $(date +%F)" >> ~/.svid_overhead
+	fi
+	echo "${folder}" >> ${clist}
 	echo "${item}" >> ~/.svid_overhead
 done
 
+echo "Копирую обработанный контент на google disk..."
+cd "${afolder}"
+if [ -f ${clist} ];then
+	for folder in `cat ${clist}`;do
+		echo "Копирую: ${folder} на Google Drive"
+		dn="$HOME/terraslav2345/svid-books/${folder}"
+		if [ ! -d "${dn}" ];then mkdir -p "${dn}"; fi
+		cp -rv "${folder}" "${dn}"
+	done
+	cp -v ~/.svid_overhead "$HOME/terraslav2345/svid-books/"
+fi
+
+echo "Проверяю и загружаю папки, имеющиеся локально и отсутствующие в облаке..."
+cd "${afolder}"
+for ganre in *;do
+	for i in ${ganre}/*;do
+		dn="$HOME/terraslav2345/svid-books/${i}"
+		echo "Проверяю: ${i}"
+		if [ ! -d "${dn}" ];then
+			echo "Копирую: ${i}"
+			mkdir -p "${dn}"
+			cp -rv "${i}" "${dn}"
+		fi
+	done
+done
+
+echo "Размонтирую Google Drive"
+sleep 1
+umount "${HOME}/terraslav2345"
+rmdir "${HOME}/terraslav2345"
 if [ -f ${temp} ];then rm ${temp}; fi
+if [ -f ${clist} ];then rm ${clist}; fi
